@@ -3,12 +3,14 @@ services:
     build: .
     container_name: teamtimer
     ports:
-      - "3000:3000"
+      - "${HOST_PORT:-3000}:${PORT:-3000}"
     volumes:
-      - ./data:/app/data
+      - ${DATA_DIR_HOST:-./data}:${DATA_DIR_CONTAINER:-/app/data}
     environment:
-      PORT: 3000
-      DATA_FILE: /app/data/app-data.json
-      ADMIN_USERNAME: admin
-      ADMIN_PASSWORD: admin
+      PORT: ${PORT:-3000}
+      DATA_DIR: ${DATA_DIR_CONTAINER:-/app/data}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      SESSION_SECRET: ${SESSION_SECRET:-teamtimer-dev-secret-change-me}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-168}
     restart: unless-stopped

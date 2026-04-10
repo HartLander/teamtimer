@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Plus, Trash2, Edit2, Check, X, MapPin, Clock, Shield, CalendarRange } from 'lucide-react';
+import { Plus, Trash2, Edit2, Check, X, MapPin, Clock, CalendarRange } from 'lucide-react';
 
 const MONTH_NAMES = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
 
@@ -145,20 +145,6 @@ export default function SettingsPage() {
                 {name.slice(0, 3)}
               </Button>
             ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Admin */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base"><Shield className="h-4 w-4" /> Admin-Zugang</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="rounded-lg border border-border p-3 text-sm text-muted-foreground">
-            <p>Benutzername: <span className="font-medium text-foreground">admin</span></p>
-            <p>Passwort: <span className="font-medium text-foreground">admin</span></p>
-            <p className="mt-2 text-xs text-muted-foreground">Passwortänderung in einer zukünftigen Version verfügbar.</p>
           </div>
         </CardContent>
       </Card>

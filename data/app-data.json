@@ -1,42 +1,13 @@
 {
-  "auth": {
-    "username": "admin",
-    "password": "admin"
-  },
-  "employees": [
-    {
-      "firstName": "Francis",
-      "lastName": "Hartl",
-      "phone": "",
-      "note": "",
-      "active": true,
-      "canSupervise": true,
-      "monthlyTargetHours": 40,
-      "employmentType": "Aushilfe",
-      "preferredLocationId": null,
-      "id": "emp-1775819286760"
-    },
-    {
-      "firstName": "Danny",
-      "lastName": "Neumann",
-      "phone": "",
-      "note": "",
-      "active": true,
-      "canSupervise": true,
-      "monthlyTargetHours": 40,
-      "employmentType": "Aushilfe",
-      "preferredLocationId": null,
-      "id": "emp-1775819297575"
-    }
-  ],
+  "employees": [],
   "locations": [
     {
       "id": "loc-1",
-      "name": "Mainflingen Campingsee"
+      "name": "Badesee 1"
     },
     {
       "id": "loc-2",
-      "name": "Zellhausen Badesee"
+      "name": "Badesee 2"
     }
   ],
   "shiftSlots": [

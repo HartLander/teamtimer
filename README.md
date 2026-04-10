@@ -6,27 +6,35 @@ TeamTimer ist eine lokal nutzbare Web-App zur Schichtplanung für Badeseen.
 
 - **Frontend:** React + TypeScript + Vite + Tailwind
 - **Backend:** Node.js + Express
-- **Speicherung:** JSON-Datei im Projektordner (`data/app-data.json`)
+- **Speicherung:** JSON-Datei im Datenordner (`app-data.json`)
 - **Deployment lokal:** Docker Compose
 
 Ich habe die bestehende Lovable-Oberfläche bewusst beibehalten und nur funktional angebunden.
 
-## Wichtige Änderung
+## Was jetzt neu ist
 
-Die Daten werden **nicht im Docker-Container versteckt gespeichert**, sondern in:
+- **Admin-Zugang per Umgebungsvariablen**
+- **Session-Secret per Umgebungsvariable**
+- **Datenordner per Umgebungsvariable**
+- **Port per Umgebungsvariable**
 
-```text
-data/app-data.json
-```
+Die Login-Daten werden **nicht** in `app-data.json` gespeichert, sondern kommen direkt aus der Server-Konfiguration.
 
-Diese Datei liegt im Projektordner und wird per Bind-Mount in den Container eingebunden.
+## Wichtige Umgebungsvariablen
 
-## Standard-Login
+- `ADMIN_USERNAME`
+- `ADMIN_PASSWORD`
+- `SESSION_SECRET`
+- `PORT`
+- `HOST_PORT`
+- `DATA_DIR_HOST`
+- `DATA_DIR_CONTAINER`
 
-- Benutzername: `admin`
-- Passwort: `admin`
+## Empfohlener lokaler Start
 
-## Start mit Docker
+1. `.env.example` nach `.env` kopieren
+2. Werte anpassen
+3. starten mit:
 
 ```bash
 docker compose up --build
@@ -35,21 +43,43 @@ docker compose up --build
 Danach läuft die App unter:
 
 ```text
+http://localhost:HOST_PORT
+```
+
+Beispiel bei `HOST_PORT=3000`:
+
+```text
 http://localhost:3000
 ```
 
-## Daten zurücksetzen
+## Datenhaltung
 
-Wenn du komplett neu starten willst, lösche einfach:
+Die Daten werden außerhalb des Containers gespeichert. Standardmäßig liegt die Datei hier:
 
 ```text
-data/app-data.json
+./data/app-data.json
 ```
 
-Beim nächsten Start wird die Datei automatisch neu erstellt.
+Über `DATA_DIR_HOST` kannst du das lokal ändern. Für Unraid wird später daraus typischerweise so etwas wie:
 
-## Hinweise
+```text
+/mnt/user/appdata/teamtimer
+```
 
-- Das Startpaket ist jetzt absichtlich **ohne Demo-Mitarbeiter und ohne Demo-Schichten** befüllt.
-- Die zwei Standard-Standorte und die vier Standardschichten sind bereits vorhanden.
-- `package-lock.json` wurde entfernt, damit Docker nicht wieder an einem fehlerhaften Lockfile hängen bleibt.
+## Wichtiger Hinweis für Unraid
+
+Für Unraid solltest du unbedingt eigene Werte setzen für:
+
+- `ADMIN_USERNAME`
+- `ADMIN_PASSWORD`
+- `SESSION_SECRET`
+
+## Daten zurücksetzen
+
+Wenn du komplett neu starten willst, lösche einfach die Datei:
+
+```text
+app-data.json
+```
+
+im gemappten Datenordner. Beim nächsten Start wird sie automatisch neu erstellt.

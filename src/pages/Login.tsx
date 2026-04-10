@@ -60,7 +60,7 @@ export default function Login() {
               {isSubmitting ? 'Anmelden …' : 'Anmelden'}
             </Button>
             <p className="text-xs text-center text-muted-foreground">
-              Standard: admin / admin
+              Zugangsdaten werden über die Server-Konfiguration festgelegt.
             </p>
           </form>
         </CardContent>

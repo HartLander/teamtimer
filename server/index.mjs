@@ -9,11 +9,13 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 const distDir = path.join(rootDir, 'dist');
-const defaultDataFile = path.join(rootDir, 'data', 'app-data.json');
-const dataFile = process.env.DATA_FILE || defaultDataFile;
+const defaultDataDir = path.join(rootDir, 'data');
+const configuredDataDir = process.env.DATA_DIR || defaultDataDir;
+const dataFile = process.env.DATA_FILE || path.join(configuredDataDir, 'app-data.json');
 const app = express();
-const port = Number(process.env.PORT || 3000);
-const activeTokens = new Set();
+const port = Number(process.env.PORT || process.env.APP_PORT || 3000);
+const sessionTtlHours = Number(process.env.SESSION_TTL_HOURS || 168);
+const revokedTokens = new Set();
 
 app.use(express.json({ limit: '2mb' }));
 
@@ -21,16 +23,23 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function getConfiguredAuth() {
+  return {
+    username: process.env.ADMIN_USERNAME || 'admin',
+    password: process.env.ADMIN_PASSWORD || 'admin',
+  };
+}
+
+function getSessionSecret() {
+  const secret = process.env.SESSION_SECRET || 'teamtimer-dev-secret-change-me';
+  return String(secret);
+}
+
 function sanitizeState(payload) {
   const fallback = createDefaultState();
   const next = payload && typeof payload === 'object' ? payload : {};
-  const auth = next.auth && typeof next.auth === 'object' ? next.auth : {};
 
   return {
-    auth: {
-      username: typeof auth.username === 'string' && auth.username.trim() ? auth.username.trim() : fallback.auth.username,
-      password: typeof auth.password === 'string' && auth.password ? auth.password : fallback.auth.password,
-    },
     employees: Array.isArray(next.employees) ? next.employees : clone(fallback.employees),
     locations: Array.isArray(next.locations) ? next.locations : clone(fallback.locations),
     shiftSlots: Array.isArray(next.shiftSlots) ? next.shiftSlots : clone(fallback.shiftSlots),
@@ -38,6 +47,37 @@ function sanitizeState(payload) {
     seasonMonths: Array.isArray(next.seasonMonths) ? next.seasonMonths : clone(fallback.seasonMonths),
     highDemandDays: Array.isArray(next.highDemandDays) ? next.highDemandDays : clone(fallback.highDemandDays),
   };
+}
+
+function createToken(username) {
+  const payload = {
+    sub: username,
+    exp: Date.now() + sessionTtlHours * 60 * 60 * 1000,
+  };
+  const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const signature = crypto.createHmac('sha256', getSessionSecret()).update(body).digest('base64url');
+  return `${body}.${signature}`;
+}
+
+function verifyToken(token) {
+  if (!token || revokedTokens.has(token)) return false;
+
+  const [body, signature] = token.split('.');
+  if (!body || !signature) return false;
+
+  const expectedSignature = crypto.createHmac('sha256', getSessionSecret()).update(body).digest('base64url');
+  const signatureBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expectedSignature);
+
+  if (signatureBuffer.length !== expectedBuffer.length) return false;
+  if (!crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) return false;
+
+  try {
+    const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+    return typeof payload?.exp === 'number' && payload.exp > Date.now();
+  } catch {
+    return false;
+  }
 }
 
 function publicStateFrom(fullState) {
@@ -88,7 +128,7 @@ function getBearerToken(req) {
 
 function requireAuth(req, res, next) {
   const token = getBearerToken(req);
-  if (!token || !activeTokens.has(token)) {
+  if (!verifyToken(token)) {
     return res.status(401).json({ ok: false, message: 'Nicht angemeldet' });
   }
   return next();
@@ -98,13 +138,21 @@ app.get('/api/health', (_req, res) => {
   res.json({ ok: true });
 });
 
+app.get('/api/runtime-config', (_req, res) => {
+  res.json({
+    dataFile,
+    port,
+    authConfigured: Boolean(process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD),
+    usingDefaultSecret: !process.env.SESSION_SECRET,
+  });
+});
+
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body || {};
-  const state = await readFullState();
+  const auth = getConfiguredAuth();
 
-  if (username === state.auth.username && password === state.auth.password) {
-    const token = crypto.randomUUID();
-    activeTokens.add(token);
+  if (username === auth.username && password === auth.password) {
+    const token = createToken(auth.username);
     return res.json({ ok: true, token });
   }
 
@@ -113,7 +161,7 @@ app.post('/api/login', async (req, res) => {
 
 app.post('/api/logout', requireAuth, (req, res) => {
   const token = getBearerToken(req);
-  if (token) activeTokens.delete(token);
+  if (token) revokedTokens.add(token);
   res.json({ ok: true });
 });
 
@@ -123,11 +171,7 @@ app.get('/api/state', requireAuth, async (_req, res) => {
 });
 
 app.put('/api/state', requireAuth, async (req, res) => {
-  const current = await readFullState();
-  const next = sanitizeState({
-    ...req.body,
-    auth: current.auth,
-  });
+  const next = sanitizeState(req.body);
   const saved = await writeFullState(next);
   res.json({ ok: true, state: publicStateFrom(saved) });
 });
@@ -144,6 +188,12 @@ app.get('*', async (req, res, next) => {
 });
 
 await ensureDataFile();
+if (!process.env.ADMIN_USERNAME || !process.env.ADMIN_PASSWORD) {
+  console.warn('WARNUNG: ADMIN_USERNAME oder ADMIN_PASSWORD sind nicht gesetzt. Fallback auf admin/admin.');
+}
+if (!process.env.SESSION_SECRET) {
+  console.warn('WARNUNG: SESSION_SECRET ist nicht gesetzt. Bitte für Unraid einen eigenen Secret-Wert setzen.');
+}
 app.listen(port, () => {
   console.log(`TeamTimer läuft auf http://localhost:${port}`);
   console.log(`Datendatei: ${dataFile}`);

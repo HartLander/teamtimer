@@ -6,8 +6,8 @@ export const DEFAULT_SHIFT_SLOTS = [
 ];
 
 export const defaultLocations = [
-  { id: 'loc-1', name: 'Mainflingen Campingsee' },
-  { id: 'loc-2', name: 'Zellhausen Badesee' },
+  { id: 'loc-1', name: 'Badesee 1' },
+  { id: 'loc-2', name: 'Badesee 2' },
 ];
 
 export const defaultEmployees = [];
@@ -15,10 +15,6 @@ export const defaultAssignments = [];
 
 export function createDefaultState() {
   return {
-    auth: {
-      username: process.env.ADMIN_USERNAME || 'admin',
-      password: process.env.ADMIN_PASSWORD || 'admin',
-    },
     employees: defaultEmployees,
     locations: defaultLocations,
     shiftSlots: DEFAULT_SHIFT_SLOTS,
