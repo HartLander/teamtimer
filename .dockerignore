@@ -1,0 +1,8 @@
+node_modules
+dist
+.git
+.gitignore
+bun.lock
+bun.lockb
+playwright-report
+test-results

@@ -1,0 +1,104 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 220 15% 10%;
+    --foreground: 210 20% 92%;
+
+    --card: 220 15% 13%;
+    --card-foreground: 210 20% 92%;
+
+    --popover: 220 15% 15%;
+    --popover-foreground: 210 20% 92%;
+
+    --primary: 152 60% 42%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 12% 18%;
+    --secondary-foreground: 210 20% 88%;
+
+    --muted: 220 12% 18%;
+    --muted-foreground: 220 10% 55%;
+
+    --accent: 220 12% 20%;
+    --accent-foreground: 210 20% 88%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 12% 20%;
+    --input: 220 12% 22%;
+    --ring: 152 60% 42%;
+
+    --radius: 0.5rem;
+
+    --success: 152 60% 42%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+    --info: 220 70% 50%;
+    --info-foreground: 0 0% 100%;
+
+    /* Kasse = Blau, Badeaufsicht = Rot, Inaktiv = Grau, Urlaub = Gelb */
+    --badge-kasse: 220 70% 55%;
+    --badge-aufsicht: 0 72% 51%;
+    --badge-inactive: 220 9% 46%;
+    --badge-vacation: 38 92% 50%;
+
+    --sidebar-background: 220 15% 11%;
+    --sidebar-foreground: 210 20% 88%;
+    --sidebar-primary: 152 60% 42%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 12% 16%;
+    --sidebar-accent-foreground: 210 20% 88%;
+    --sidebar-border: 220 12% 18%;
+    --sidebar-ring: 152 60% 42%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-size: 16px;
+  }
+
+  html {
+    font-size: 17px;
+  }
+}
+
+@layer components {
+  .shift-cell {
+    @apply min-h-[3rem] rounded-md border border-dashed border-border/60 p-1 transition-colors;
+  }
+  .shift-cell:hover {
+    @apply border-primary/40 bg-primary/5;
+  }
+  .shift-cell.drag-over {
+    @apply border-primary bg-primary/10 border-solid;
+  }
+  .employee-badge {
+    @apply inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium transition-all;
+  }
+  .employee-badge-kasse {
+    @apply bg-[hsl(var(--badge-kasse)/0.15)] text-[hsl(var(--badge-kasse))];
+  }
+  .employee-badge-aufsicht {
+    @apply bg-[hsl(var(--badge-aufsicht)/0.15)] text-[hsl(var(--badge-aufsicht))];
+  }
+  .employee-badge-inactive {
+    @apply bg-[hsl(var(--badge-inactive)/0.15)] text-[hsl(var(--badge-inactive))];
+  }
+  .employee-badge-vacation {
+    @apply bg-[hsl(var(--badge-vacation)/0.15)] text-[hsl(var(--badge-vacation))];
+  }
+}

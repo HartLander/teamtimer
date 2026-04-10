@@ -1,0 +1,14 @@
+services:
+  teamtimer:
+    build: .
+    container_name: teamtimer
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      PORT: 3000
+      DATA_FILE: /app/data/app-data.json
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: admin
+    restart: unless-stopped

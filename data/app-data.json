@@ -1,0 +1,85 @@
+{
+  "auth": {
+    "username": "admin",
+    "password": "admin"
+  },
+  "employees": [
+    {
+      "firstName": "Francis",
+      "lastName": "Hartl",
+      "phone": "",
+      "note": "",
+      "active": true,
+      "canSupervise": true,
+      "monthlyTargetHours": 40,
+      "employmentType": "Aushilfe",
+      "preferredLocationId": null,
+      "id": "emp-1775819286760"
+    },
+    {
+      "firstName": "Danny",
+      "lastName": "Neumann",
+      "phone": "",
+      "note": "",
+      "active": true,
+      "canSupervise": true,
+      "monthlyTargetHours": 40,
+      "employmentType": "Aushilfe",
+      "preferredLocationId": null,
+      "id": "emp-1775819297575"
+    }
+  ],
+  "locations": [
+    {
+      "id": "loc-1",
+      "name": "Mainflingen Campingsee"
+    },
+    {
+      "id": "loc-2",
+      "name": "Zellhausen Badesee"
+    }
+  ],
+  "shiftSlots": [
+    {
+      "id": "kasse-frueh",
+      "label": "Kasse Früh",
+      "requiresSupervision": false,
+      "startTime": "08:00",
+      "endTime": "14:00",
+      "hours": 6
+    },
+    {
+      "id": "kasse-spaet",
+      "label": "Kasse Spät",
+      "requiresSupervision": false,
+      "startTime": "14:00",
+      "endTime": "20:00",
+      "hours": 6
+    },
+    {
+      "id": "aufsicht-frueh",
+      "label": "Aufsicht Früh",
+      "requiresSupervision": true,
+      "startTime": "08:00",
+      "endTime": "14:00",
+      "hours": 6
+    },
+    {
+      "id": "aufsicht-spaet",
+      "label": "Aufsicht Spät",
+      "requiresSupervision": true,
+      "startTime": "14:00",
+      "endTime": "20:00",
+      "hours": 6
+    }
+  ],
+  "assignments": [],
+  "seasonMonths": [
+    4,
+    5,
+    6,
+    7,
+    8
+  ],
+  "highDemandDays": []
+}
