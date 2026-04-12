@@ -37,7 +37,7 @@ export default function Login() {
               <Input
                 value={username}
                 onChange={e => { setUsername(e.target.value); setError(false); }}
-                placeholder="admin"
+                placeholder="Benutzername"
                 autoFocus
               />
             </div>

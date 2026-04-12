@@ -12,6 +12,7 @@ export const defaultLocations = [
 
 export const defaultEmployees = [];
 export const defaultAssignments = [];
+export const defaultUserAccounts = [];
 
 export function createDefaultState() {
   return {
@@ -21,5 +22,6 @@ export function createDefaultState() {
     assignments: defaultAssignments,
     seasonMonths: [4, 5, 6, 7, 8],
     highDemandDays: [],
+    userAccounts: defaultUserAccounts,
   };
 }

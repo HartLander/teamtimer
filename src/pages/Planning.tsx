@@ -2,17 +2,33 @@ import { useState, useMemo, useEffect } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, Search, X, AlertTriangle, Info, Eye, EyeOff, MapPin, Sun, FileDown, Users } from 'lucide-react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Search,
+  X,
+  AlertTriangle,
+  Info,
+  MapPin,
+  Sun,
+  FileDown,
+  Users,
+  Check,
+  ShieldCheck,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import ExportDialog from '@/components/ExportDialog';
 import { cn } from '@/lib/utils';
+import { ShiftSlot } from '@/types';
 
 const WEEKDAYS = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
 const LEFT_PANEL_STORAGE_KEY = 'teamtimer-planning-left-collapsed';
 const RIGHT_PANEL_STORAGE_KEY = 'teamtimer-planning-right-collapsed';
+const SELECTED_LOCATION_STORAGE_KEY = 'teamtimer-planning-selected-location';
+const CURRENT_MONTH_STORAGE_KEY = 'teamtimer-planning-current-month';
 
 const getInitialPanelState = (storageKey: string, collapseBelow: number) => {
   if (typeof window === 'undefined') return false;
@@ -21,21 +37,123 @@ const getInitialPanelState = (storageKey: string, collapseBelow: number) => {
   return window.innerWidth <= collapseBelow;
 };
 
+const clampDateToSeason = (date: Date, seasonMonths: number[]) => {
+  const uniqueMonths = [...new Set(seasonMonths)].sort((a, b) => a - b);
+  const year = date.getFullYear();
+
+  if (uniqueMonths.length === 0) {
+    return new Date(year, date.getMonth(), 1);
+  }
+
+  const currentMonth = date.getMonth();
+  if (uniqueMonths.includes(currentMonth)) {
+    return new Date(year, currentMonth, 1);
+  }
+
+  const closestMonth = uniqueMonths.reduce((best, month) => {
+    const bestDistance = Math.abs(best - currentMonth);
+    const nextDistance = Math.abs(month - currentMonth);
+    return nextDistance < bestDistance ? month : best;
+  }, uniqueMonths[0]);
+
+  return new Date(year, closestMonth, 1);
+};
+
+const getInitialPlanningDate = (seasonMonths: number[]) => {
+  const fallback = clampDateToSeason(new Date(), seasonMonths);
+  if (typeof window === 'undefined') return fallback;
+
+  const saved = window.localStorage.getItem(CURRENT_MONTH_STORAGE_KEY);
+  if (!saved) return fallback;
+
+  const parsed = new Date(saved);
+  if (Number.isNaN(parsed.getTime())) return fallback;
+
+  return clampDateToSeason(parsed, seasonMonths);
+};
+
+const getInitialSelectedLocationId = (locationIds: string[]) => {
+  if (typeof window === 'undefined') return locationIds[0] ?? null;
+  const saved = window.localStorage.getItem(SELECTED_LOCATION_STORAGE_KEY);
+  if (saved && locationIds.includes(saved)) return saved;
+  return locationIds[0] ?? null;
+};
+
+const getNextSeasonDate = (date: Date, seasonMonths: number[]) => {
+  const uniqueMonths = [...new Set(seasonMonths)].sort((a, b) => a - b);
+  const year = date.getFullYear();
+  const month = date.getMonth();
+
+  if (uniqueMonths.length === 0) {
+    return new Date(year, month + 1, 1);
+  }
+
+  const currentIndex = uniqueMonths.indexOf(month);
+  if (currentIndex === -1) {
+    return clampDateToSeason(date, seasonMonths);
+  }
+
+  if (currentIndex < uniqueMonths.length - 1) {
+    return new Date(year, uniqueMonths[currentIndex + 1], 1);
+  }
+
+  return new Date(year + 1, uniqueMonths[0], 1);
+};
+
+const getPreviousSeasonDate = (date: Date, seasonMonths: number[]) => {
+  const uniqueMonths = [...new Set(seasonMonths)].sort((a, b) => a - b);
+  const year = date.getFullYear();
+  const month = date.getMonth();
+
+  if (uniqueMonths.length === 0) {
+    return new Date(year, month - 1, 1);
+  }
+
+  const currentIndex = uniqueMonths.indexOf(month);
+  if (currentIndex === -1) {
+    return clampDateToSeason(date, seasonMonths);
+  }
+
+  if (currentIndex > 0) {
+    return new Date(year, uniqueMonths[currentIndex - 1], 1);
+  }
+
+  return new Date(year - 1, uniqueMonths[uniqueMonths.length - 1], 1);
+};
+
+type SlotGroup = {
+  slot: ShiftSlot;
+  group: 'kasse' | 'aufsicht' | 'urlaub';
+  isFirstInGroup: boolean;
+};
+
 export default function Planning() {
   const {
-    employees, locations, assignments, allSlots,
-    addAssignment, removeAssignment,
-    getAssignmentsForDate, getEmployee,
-    getEmployeeMonthlyHours, getWarnings, getShiftSlot,
-    toggleHighDemand, isHighDemand,
+    employees,
+    locations,
+    assignments,
+    allSlots,
+    addAssignment,
+    removeAssignment,
+    getAssignmentsForDate,
+    getEmployee,
+    getEmployeeMonthlyHours,
+    getWarnings,
+    getShiftSlot,
+    toggleHighDemand,
+    isHighDemand,
+    seasonMonths,
+    currentUser,
+    canManageSlot,
+    canExportCombined,
   } = useApp();
 
-  const [currentDate, setCurrentDate] = useState(new Date());
+  const [currentDate, setCurrentDate] = useState(() => getInitialPlanningDate(seasonMonths));
   const [search, setSearch] = useState('');
   const [filterSupervision, setFilterSupervision] = useState<boolean | null>(null);
   const [dragEmployeeId, setDragEmployeeId] = useState<string | null>(null);
   const [selectedEmployee, setSelectedEmployee] = useState<string | null>(null);
-  const [visibleLocationIds, setVisibleLocationIds] = useState<Set<string>>(new Set(locations.map(l => l.id)));
+  const [selectedLocationId, setSelectedLocationId] = useState<string | null>(() => getInitialSelectedLocationId(locations.map(l => l.id)));
   const [exportOpen, setExportOpen] = useState(false);
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(() => getInitialPanelState(LEFT_PANEL_STORAGE_KEY, 1320));
   const [rightPanelCollapsed, setRightPanelCollapsed] = useState(() => getInitialPanelState(RIGHT_PANEL_STORAGE_KEY, 1500));
@@ -49,109 +167,125 @@ export default function Planning() {
   }, [rightPanelCollapsed]);
 
   useEffect(() => {
-    setVisibleLocationIds(prev => {
-      const updated = new Set(prev);
-      locations.forEach(l => {
-        if (!updated.has(l.id)) updated.add(l.id);
-      });
-      updated.forEach(id => {
-        if (!locations.find(l => l.id === id)) updated.delete(id);
-      });
-      return updated;
+    setCurrentDate(prev => {
+      const clamped = clampDateToSeason(prev, seasonMonths);
+      return prev.getTime() === clamped.getTime() ? prev : clamped;
+    });
+  }, [seasonMonths]);
+
+  useEffect(() => {
+    window.localStorage.setItem(CURRENT_MONTH_STORAGE_KEY, currentDate.toISOString());
+  }, [currentDate]);
+
+  useEffect(() => {
+    const locationIds = locations.map(location => location.id);
+    setSelectedLocationId(prev => {
+      if (prev && locationIds.includes(prev)) return prev;
+      return getInitialSelectedLocationId(locationIds);
     });
   }, [locations]);
 
-  const visibleLocations = useMemo(() => locations.filter(l => visibleLocationIds.has(l.id)), [locations, visibleLocationIds]);
+  useEffect(() => {
+    if (selectedLocationId) {
+      window.localStorage.setItem(SELECTED_LOCATION_STORAGE_KEY, selectedLocationId);
+    }
+  }, [selectedLocationId]);
 
-  const toggleLocation = (id: string) => {
-    setVisibleLocationIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        if (next.size > 1) next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  };
-
-  const showOnlyLocation = (id: string) => {
-    setVisibleLocationIds(new Set([id]));
-  };
-
-  const showAllLocations = () => {
-    setVisibleLocationIds(new Set(locations.map(l => l.id)));
-  };
+  const selectedLocation = useMemo(
+    () => locations.find(location => location.id === selectedLocationId) ?? locations[0] ?? null,
+    [locations, selectedLocationId]
+  );
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
 
-  const days = useMemo(() => {
-    return eachDayOfInterval({ start: startOfMonth(currentDate), end: endOfMonth(currentDate) });
-  }, [currentDate]);
+  const days = useMemo(() => eachDayOfInterval({ start: startOfMonth(currentDate), end: endOfMonth(currentDate) }), [currentDate]);
 
   const activeEmployees = useMemo(() => {
     return employees
-      .filter(e => e.active)
-      .filter(e => !search || `${e.firstName} ${e.lastName}`.toLowerCase().includes(search.toLowerCase()))
-      .filter(e => filterSupervision === null || e.canSupervise === filterSupervision);
+      .filter(employee => employee.active)
+      .filter(employee => !search || `${employee.firstName} ${employee.lastName}`.toLowerCase().includes(search.toLowerCase()))
+      .filter(employee => filterSupervision === null || employee.canSupervise === filterSupervision);
   }, [employees, search, filterSupervision]);
 
-  const prevMonth = () => setCurrentDate(new Date(year, month - 1, 1));
-  const nextMonth = () => setCurrentDate(new Date(year, month + 1, 1));
-
+  const prevMonth = () => setCurrentDate(prev => getPreviousSeasonDate(prev, seasonMonths));
+  const nextMonth = () => setCurrentDate(prev => getNextSeasonDate(prev, seasonMonths));
   const handleDragStart = (employeeId: string) => setDragEmployeeId(employeeId);
 
   const handleDrop = (date: string, locationId: string, slotId: string) => {
     if (!dragEmployeeId) return;
+
+    const slot = getShiftSlot(slotId);
+    if (!slot) {
+      setDragEmployeeId(null);
+      return;
+    }
+
+    if (!canManageSlot(slot)) {
+      toast.error(`Du darfst ${slot.isVacation ? 'Urlaub' : slot.requiresSupervision ? 'Badeaufsicht' : 'Kasse'} nicht bearbeiten.`);
+      setDragEmployeeId(null);
+      return;
+    }
+
     const existing = assignments.find(
-      a => a.employeeId === dragEmployeeId && a.date === date && a.locationId === locationId && a.shiftSlotId === slotId
+      assignment =>
+        assignment.employeeId === dragEmployeeId &&
+        assignment.date === date &&
+        assignment.locationId === locationId &&
+        assignment.shiftSlotId === slotId
     );
+
     if (existing) {
       toast.error('Bereits in dieser Schicht eingeplant');
       setDragEmployeeId(null);
       return;
     }
-    const emp = getEmployee(dragEmployeeId);
-    const slot = getShiftSlot(slotId);
-    if (emp && slot?.requiresSupervision && !emp.canSupervise) {
-      toast.warning(`${emp.firstName} ${emp.lastName} hat keine Badeaufsicht-Berechtigung!`);
+
+    const employee = getEmployee(dragEmployeeId);
+    if (employee && slot.requiresSupervision && !employee.canSupervise) {
+      toast.warning(`${employee.firstName} ${employee.lastName} hat keine Badeaufsicht-Berechtigung.`);
     }
+
     addAssignment({ employeeId: dragEmployeeId, locationId, date, shiftSlotId: slotId });
     setDragEmployeeId(null);
   };
 
-  const selEmp = selectedEmployee ? getEmployee(selectedEmployee) : null;
-  const selEmpHours = selectedEmployee ? getEmployeeMonthlyHours(selectedEmployee, year, month) : 0;
+  const selectedEmployeeData = selectedEmployee ? getEmployee(selectedEmployee) : null;
+  const selectedEmployeeHours = selectedEmployee ? getEmployeeMonthlyHours(selectedEmployee, year, month) : 0;
+  const canEditAssignment = (slotId: string) => {
+    const slot = getShiftSlot(slotId);
+    return slot ? canManageSlot(slot) : false;
+  };
 
-  const kasseSlots = allSlots.filter(s => !s.requiresSupervision && !s.isVacation);
-  const aufsichtSlots = allSlots.filter(s => s.requiresSupervision);
-  const vacSlot = allSlots.filter(s => s.isVacation);
-  type SlotGroup = { slot: typeof allSlots[number]; group: 'kasse' | 'aufsicht' | 'urlaub'; isFirstInGroup: boolean };
+  const kasseSlots = allSlots.filter(slot => !slot.requiresSupervision && !slot.isVacation);
+  const aufsichtSlots = allSlots.filter(slot => slot.requiresSupervision);
+  const vacationSlots = allSlots.filter(slot => slot.isVacation);
+
   const groupedSlots: SlotGroup[] = [
     ...kasseSlots.map((slot, index) => ({ slot, group: 'kasse' as const, isFirstInGroup: index === 0 })),
     ...aufsichtSlots.map((slot, index) => ({ slot, group: 'aufsicht' as const, isFirstInGroup: index === 0 })),
-    ...vacSlot.map((slot, index) => ({ slot, group: 'urlaub' as const, isFirstInGroup: index === 0 })),
+    ...vacationSlots.map((slot, index) => ({ slot, group: 'urlaub' as const, isFirstInGroup: index === 0 })),
   ];
-  const totalColsPerLoc = groupedSlots.length;
+
+  if (!selectedLocation) {
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+        Bitte zuerst mindestens einen Standort anlegen.
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full min-h-0 min-w-0 overflow-hidden bg-background">
       <div
         className={cn(
           'flex h-full min-h-0 flex-shrink-0 flex-col border-r border-border bg-card transition-all duration-200',
-          leftPanelCollapsed ? 'w-14' : 'w-72'
+          leftPanelCollapsed ? 'w-14' : 'w-60 xl:w-64'
         )}
       >
         {leftPanelCollapsed ? (
           <div className="flex h-full flex-col items-center gap-3 p-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9"
-              onClick={() => setLeftPanelCollapsed(false)}
-              title="Mitarbeiterleiste ausklappen"
-            >
+            <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => setLeftPanelCollapsed(false)} title="Mitarbeiterleiste ausklappen">
               <ChevronRight className="h-4 w-4" />
             </Button>
             <div className="mt-2 flex flex-col items-center gap-2 text-muted-foreground">
@@ -164,188 +298,153 @@ export default function Planning() {
             <div className="border-b border-border p-3">
               <div className="mb-2 flex items-center justify-between gap-2">
                 <h2 className="text-sm font-semibold text-foreground">Mitarbeiter</h2>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => setLeftPanelCollapsed(true)}
-                  title="Mitarbeiterleiste einklappen"
-                >
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setLeftPanelCollapsed(true)} title="Mitarbeiterleiste einklappen">
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
               </div>
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-                <Input placeholder="Suchen..." value={search} onChange={e => setSearch(e.target.value)} className="pl-8 h-8 text-sm" />
+                <Input placeholder="Suchen..." value={search} onChange={event => setSearch(event.target.value)} className="h-8 pl-8 text-sm" />
               </div>
               <div className="mt-2 flex gap-1">
-                {([null, true, false] as const).map((v, i) => (
+                {([null, true, false] as const).map((value, index) => (
                   <Button
-                    key={i}
-                    variant={filterSupervision === v ? 'default' : 'outline'}
+                    key={index}
+                    variant={filterSupervision === value ? 'default' : 'outline'}
                     size="sm"
-                    className="h-6 text-xs px-2"
-                    onClick={() => setFilterSupervision(v)}
+                    className="h-6 px-2 text-xs"
+                    onClick={() => setFilterSupervision(value)}
                   >
-                    {v === null ? 'Alle' : v ? 'Aufsicht' : 'Kasse'}
+                    {value === null ? 'Alle' : value ? 'Aufsicht' : 'Kasse'}
                   </Button>
                 ))}
               </div>
             </div>
-            <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1">
-              {activeEmployees.map(emp => {
-                const hours = getEmployeeMonthlyHours(emp.id, year, month);
+            <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
+              {activeEmployees.map(employee => {
+                const hours = getEmployeeMonthlyHours(employee.id, year, month);
                 return (
                   <div
-                    key={emp.id}
+                    key={employee.id}
                     draggable
-                    onDragStart={() => handleDragStart(emp.id)}
-                    onClick={() => setSelectedEmployee(emp.id)}
-                    className={`cursor-grab rounded-lg border p-2 transition-all hover:shadow-sm active:cursor-grabbing ${
-                      selectedEmployee === emp.id ? 'border-primary bg-primary/5' : 'border-border bg-card'
-                    }`}
+                    onDragStart={() => handleDragStart(employee.id)}
+                    onClick={() => setSelectedEmployee(employee.id)}
+                    className={cn(
+                      'cursor-grab rounded-lg border p-2 transition-all hover:shadow-sm active:cursor-grabbing',
+                      selectedEmployee === employee.id ? 'border-primary bg-primary/5' : 'border-border bg-card'
+                    )}
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-foreground">{emp.firstName} {emp.lastName.charAt(0)}.</span>
-                      <span className={`employee-badge ${emp.canSupervise ? 'employee-badge-aufsicht' : 'employee-badge-kasse'}`}>
-                        {emp.canSupervise ? 'BA' : 'K'}
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate text-sm font-medium text-foreground">
+                        {employee.firstName} {employee.lastName.charAt(0)}.
+                      </span>
+                      <span className={cn('employee-badge', employee.canSupervise ? 'employee-badge-aufsicht' : 'employee-badge-kasse')}>
+                        {employee.canSupervise ? 'BA' : 'K'}
                       </span>
                     </div>
-                    <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground gap-2">
-                      <span className="whitespace-nowrap">{hours}h / {emp.monthlyTargetHours}h</span>
-                      <div className="h-1 w-16 rounded-full bg-muted overflow-hidden">
-                        <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.min(100, (hours / Math.max(1, emp.monthlyTargetHours)) * 100)}%` }} />
+                    <div className="mt-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                      <span className="whitespace-nowrap">{hours}h / {employee.monthlyTargetHours}h</span>
+                      <div className="h-1 w-14 overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full bg-primary transition-all"
+                          style={{ width: `${Math.min(100, (hours / Math.max(1, employee.monthlyTargetHours)) * 100)}%` }}
+                        />
                       </div>
                     </div>
                   </div>
                 );
               })}
+              {activeEmployees.length === 0 && (
+                <div className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+                  Keine passenden Mitarbeiter gefunden.
+                </div>
+              )}
             </div>
           </>
         )}
       </div>
 
-      <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-card px-4 py-3">
-          <div className="flex items-center gap-3">
-            <Button variant="outline" size="icon" className="h-8 w-8" onClick={prevMonth}><ChevronLeft className="h-4 w-4" /></Button>
-            <h1 className="min-w-[180px] text-center text-lg font-semibold capitalize text-foreground">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-card px-3 py-2">
+          <div className="flex items-center gap-1 md:gap-2">
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={prevMonth}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <div className="min-w-[10rem] text-center text-lg font-semibold text-foreground">
               {format(currentDate, 'MMMM yyyy', { locale: de })}
-            </h1>
-            <Button variant="outline" size="icon" className="h-8 w-8" onClick={nextMonth}><ChevronRight className="h-4 w-4" /></Button>
+            </div>
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={nextMonth}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
           </div>
-          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1"
-              onClick={() => setLeftPanelCollapsed(prev => !prev)}
-            >
-              {leftPanelCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-              Team
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1"
-              onClick={() => setRightPanelCollapsed(prev => !prev)}
-            >
-              Info
-              {rightPanelCollapsed ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-            </Button>
+
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            {currentUser && (
+              <Badge variant="outline" className="gap-1 text-[11px]">
+                <ShieldCheck className="h-3 w-3" />
+                {currentUser.isAdmin ? 'Admin' : currentUser.displayName}
+              </Badge>
+            )}
+            <Badge variant="secondary" className="gap-1 text-[11px]">
+              <MapPin className="h-3 w-3" />
+              {selectedLocation.name}
+            </Badge>
             <div className="hidden items-center gap-2 md:flex">
               <Info className="h-4 w-4" /> Drag & Drop
             </div>
+            <Button variant="outline" size="sm" className="h-8 gap-1" onClick={() => setLeftPanelCollapsed(prev => !prev)}>
+              {leftPanelCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />} Team
+            </Button>
+            <Button variant="outline" size="sm" className="h-8 gap-1" onClick={() => setRightPanelCollapsed(prev => !prev)}>
+              Info {rightPanelCollapsed ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            </Button>
           </div>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-auto overscroll-contain">
-          <table className="w-full min-w-[1120px] table-fixed border-collapse text-sm">
+        <div className="min-h-0 flex-1 overflow-auto overscroll-contain">
+          <table className="w-full min-w-[760px] table-fixed border-collapse text-sm">
             <colgroup>
               <col style={{ width: '92px' }} />
-              {visibleLocations.flatMap(loc =>
-                groupedSlots.map(groupedSlot => (
-                  <col key={`col-${loc.id}-${groupedSlot.slot.id}`} />
-                ))
-              )}
+              {groupedSlots.map(groupedSlot => (
+                <col key={`col-${selectedLocation.id}-${groupedSlot.slot.id}`} />
+              ))}
             </colgroup>
             <thead className="sticky top-0 z-20">
               <tr className="border-b border-border bg-card [&>th]:bg-card">
                 <th rowSpan={3} className="sticky left-0 z-30 w-[92px] border-r border-border bg-card px-3 py-2 text-left text-xs font-semibold text-muted-foreground align-bottom">
                   Datum
                 </th>
-                {visibleLocations.map((loc, locationIndex) => (
-                  <th
-                    key={loc.id}
-                    colSpan={totalColsPerLoc}
-                    className={cn(
-                      'px-2 py-2 text-center text-xs font-semibold text-foreground border-b border-border',
-                      locationIndex > 0 && 'border-l-2 border-l-primary/20'
-                    )}
-                  >
-                    {loc.name}
+                <th colSpan={groupedSlots.length} className="border-b border-border px-2 py-2 text-center text-xs font-semibold text-foreground">
+                  {selectedLocation.name}
+                </th>
+              </tr>
+              <tr className="border-b border-border bg-card [&>th]:bg-card">
+                {kasseSlots.length > 0 && <th colSpan={kasseSlots.length} className="px-1 py-1 text-center text-[11px] font-medium text-[hsl(var(--badge-kasse))]">Kasse</th>}
+                {aufsichtSlots.length > 0 && (
+                  <th colSpan={aufsichtSlots.length} className="border-l-2 border-l-[hsl(var(--badge-aufsicht)/0.3)] px-1 py-1 text-center text-[11px] font-medium text-[hsl(var(--badge-aufsicht))]">
+                    Aufsicht
                   </th>
-                ))}
-              </tr>
-              <tr className="border-b border-border bg-card [&>th]:bg-card">
-                {visibleLocations.map((loc, locationIndex) => (
-                  <>
-                    {kasseSlots.length > 0 && (
-                      <th
-                        key={`${loc.id}-kasse`}
-                        colSpan={kasseSlots.length}
-                        className={cn(
-                          'px-1 py-1 text-center text-[11px] font-medium text-[hsl(var(--badge-kasse))]',
-                          locationIndex > 0 && 'border-l-2 border-l-primary/20'
-                        )}
-                      >
-                        Kasse
-                      </th>
-                    )}
-                    {aufsichtSlots.length > 0 && (
-                      <th
-                        key={`${loc.id}-aufsicht`}
-                        colSpan={aufsichtSlots.length}
-                        className="border-l-2 border-l-[hsl(var(--badge-aufsicht)/0.3)] px-1 py-1 text-center text-[11px] font-medium text-[hsl(var(--badge-aufsicht))]"
-                      >
-                        Aufsicht
-                      </th>
-                    )}
-                    {vacSlot.length > 0 && (
-                      <th
-                        key={`${loc.id}-urlaub`}
-                        colSpan={vacSlot.length}
-                        className="border-l-2 border-l-[hsl(var(--badge-vacation)/0.3)] px-1 py-1 text-center text-[11px] font-medium text-[hsl(var(--badge-vacation))]"
-                      >
-                        Urlaub
-                      </th>
-                    )}
-                  </>
-                ))}
-              </tr>
-              <tr className="border-b border-border bg-card [&>th]:bg-card">
-                {visibleLocations.map((loc, locationIndex) =>
-                  groupedSlots.map((groupedSlot, slotIndex) => {
-                    const isLocStart = locationIndex > 0 && slotIndex === 0;
-                    const isGroupStart = groupedSlot.isFirstInGroup && groupedSlot.group !== 'kasse';
-                    const borderClass = isLocStart
-                      ? 'border-l-2 border-l-primary/20'
-                      : isGroupStart
-                      ? groupedSlot.group === 'aufsicht'
-                        ? 'border-l-2 border-l-[hsl(var(--badge-aufsicht)/0.3)]'
-                        : 'border-l-2 border-l-[hsl(var(--badge-vacation)/0.3)]'
-                      : '';
-
-                    return (
-                      <th
-                        key={`${loc.id}-${groupedSlot.slot.id}-head`}
-                        className={`px-2 py-2 text-left text-[11px] font-medium text-muted-foreground ${borderClass}`}
-                      >
-                        {groupedSlot.slot.label}
-                      </th>
-                    );
-                  })
                 )}
+                {vacationSlots.length > 0 && (
+                  <th colSpan={vacationSlots.length} className="border-l-2 border-l-[hsl(var(--badge-vacation)/0.3)] px-1 py-1 text-center text-[11px] font-medium text-[hsl(var(--badge-vacation))]">
+                    Urlaub
+                  </th>
+                )}
+              </tr>
+              <tr className="border-b border-border bg-card [&>th]:bg-card">
+                {groupedSlots.map(groupedSlot => {
+                  const borderClass = groupedSlot.isFirstInGroup && groupedSlot.group !== 'kasse'
+                    ? groupedSlot.group === 'aufsicht'
+                      ? 'border-l-2 border-l-[hsl(var(--badge-aufsicht)/0.3)]'
+                      : 'border-l-2 border-l-[hsl(var(--badge-vacation)/0.3)]'
+                    : '';
+
+                  return (
+                    <th key={`${selectedLocation.id}-${groupedSlot.slot.id}-head`} className={`px-2 py-2 text-left text-[11px] font-medium text-muted-foreground ${borderClass}`}>
+                      {groupedSlot.slot.label}
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
@@ -357,73 +456,80 @@ export default function Planning() {
                 const highDemand = isHighDemand(dateStr);
 
                 return (
-                  <tr key={dateStr} className={`border-b border-border/50 transition-colors hover:bg-accent/30 ${isWeekend ? 'bg-primary/[0.02]' : ''} ${highDemand ? 'bg-warning/[0.04]' : ''}`}>
-                    <td className={`sticky left-0 z-10 border-r border-border px-3 py-1.5 font-medium ${isWeekend ? 'bg-primary/[0.04]' : 'bg-card'} ${highDemand ? 'bg-warning/[0.06]' : ''}`}>
+                  <tr key={dateStr} className={cn('border-b border-border/50 transition-colors hover:bg-accent/30', isWeekend && 'bg-primary/[0.02]', highDemand && 'bg-warning/[0.04]')}>
+                    <td className={cn('sticky left-0 z-10 border-r border-border px-3 py-1.5 font-medium', isWeekend ? 'bg-primary/[0.04]' : 'bg-card', highDemand && 'bg-warning/[0.06]')}>
                       <div className="flex items-center gap-1.5">
                         <button
                           onClick={() => toggleHighDemand(dateStr)}
-                          className={`flex-shrink-0 rounded p-0.5 transition-colors ${highDemand ? 'text-warning bg-warning/20' : 'text-muted-foreground/30 hover:text-warning/60'}`}
-                          title={highDemand ? 'Hoher Bedarf – klicken zum Entfernen' : 'Als Hoher Bedarf markieren (z.B. gutes Wetter)'}
+                          className={cn('flex-shrink-0 rounded p-0.5 transition-colors', highDemand ? 'bg-warning/20 text-warning' : 'text-muted-foreground/30 hover:text-warning/60')}
+                          title={highDemand ? 'Hoher Bedarf – klicken zum Entfernen' : 'Als Hoher Bedarf markieren'}
                         >
                           <Sun className="h-3.5 w-3.5" />
                         </button>
-                        <span className={`text-xs ${isWeekend ? 'text-primary font-semibold' : 'text-foreground'}`}>{WEEKDAYS[dayOfWeek]}</span>
+                        <span className={cn('text-xs', isWeekend ? 'font-semibold text-primary' : 'text-foreground')}>
+                          {WEEKDAYS[dayOfWeek]}
+                        </span>
                         <span className="text-sm text-foreground">{format(day, 'd')}</span>
                         {warnings.length > 0 && <AlertTriangle className="h-3 w-3 text-warning" />}
                       </div>
                     </td>
-                    {visibleLocations.map((loc, locationIndex) =>
-                      groupedSlots.map((groupedSlot, slotIndex) => {
-                        const slot = groupedSlot.slot;
-                        const cellAssignments = getAssignmentsForDate(dateStr, loc.id).filter(a => a.shiftSlotId === slot.id);
-                        const isLocStart = locationIndex > 0 && slotIndex === 0;
-                        const isGroupStart = groupedSlot.isFirstInGroup && groupedSlot.group !== 'kasse';
-                        const borderClass = isLocStart
-                          ? 'border-l-2 border-l-primary/20'
-                          : isGroupStart
-                          ? groupedSlot.group === 'aufsicht'
-                            ? 'border-l-2 border-l-[hsl(var(--badge-aufsicht)/0.3)]'
-                            : 'border-l-2 border-l-[hsl(var(--badge-vacation)/0.3)]'
-                          : '';
-                        return (
-                          <td
-                            key={`${loc.id}-${slot.id}-${dateStr}`}
-                            className={`px-1.5 py-1 align-top ${borderClass}`}
-                            onDragOver={e => {
-                              e.preventDefault();
-                              e.currentTarget.classList.add('bg-primary/10');
-                            }}
-                            onDragLeave={e => e.currentTarget.classList.remove('bg-primary/10')}
-                            onDrop={e => {
-                              e.preventDefault();
-                              e.currentTarget.classList.remove('bg-primary/10');
-                              handleDrop(dateStr, loc.id, slot.id);
-                            }}
-                          >
-                            <div className={`shift-cell min-h-[3.5rem] ${slot.isVacation ? 'border-warning/30 bg-warning/[0.03]' : ''}`}>
-                              {cellAssignments.map(a => {
-                                const emp = getEmployee(a.employeeId);
-                                if (!emp) return null;
-                                const hasWarning = warnings.some(w => w.employeeId === emp.id);
-                                return (
-                                  <div
-                                    key={a.id}
-                                    className={`group mb-0.5 flex items-center justify-between rounded px-1.5 py-0.5 text-xs ${
-                                      slot.isVacation ? 'employee-badge-vacation' : slot.requiresSupervision ? 'employee-badge-aufsicht' : 'employee-badge-kasse'
-                                    } ${hasWarning ? 'ring-1 ring-warning' : ''}`}
-                                  >
-                                    <span className="truncate">{emp.firstName} {emp.lastName.charAt(0)}.</span>
-                                    <button onClick={() => removeAssignment(a.id)} className="ml-1 opacity-0 transition-opacity group-hover:opacity-100">
+
+                    {groupedSlots.map(groupedSlot => {
+                      const slot = groupedSlot.slot;
+                      const cellAssignments = getAssignmentsForDate(dateStr, selectedLocation.id).filter(
+                        assignment => assignment.shiftSlotId === slot.id
+                      );
+                      const borderClass = groupedSlot.isFirstInGroup && groupedSlot.group !== 'kasse'
+                        ? groupedSlot.group === 'aufsicht'
+                          ? 'border-l-2 border-l-[hsl(var(--badge-aufsicht)/0.3)]'
+                          : 'border-l-2 border-l-[hsl(var(--badge-vacation)/0.3)]'
+                        : '';
+
+                      return (
+                        <td
+                          key={`${selectedLocation.id}-${slot.id}-${dateStr}`}
+                          className={`px-1.5 py-1 align-top ${borderClass}`}
+                          onDragOver={event => {
+                            if (!canManageSlot(slot)) return;
+                            event.preventDefault();
+                            event.currentTarget.classList.add('bg-primary/10');
+                          }}
+                          onDragLeave={event => event.currentTarget.classList.remove('bg-primary/10')}
+                          onDrop={event => {
+                            event.preventDefault();
+                            event.currentTarget.classList.remove('bg-primary/10');
+                            handleDrop(dateStr, selectedLocation.id, slot.id);
+                          }}
+                        >
+                          <div className={cn('shift-cell min-h-[3.25rem]', slot.isVacation && 'border-warning/30 bg-warning/[0.03]', !canManageSlot(slot) && 'opacity-80')}>
+                            {cellAssignments.map(assignment => {
+                              const employee = getEmployee(assignment.employeeId);
+                              if (!employee) return null;
+
+                              const hasWarning = warnings.some(warning => warning.employeeId === employee.id);
+
+                              return (
+                                <div
+                                  key={assignment.id}
+                                  className={cn(
+                                    'group mb-0.5 flex items-center justify-between rounded px-1.5 py-0.5 text-xs',
+                                    slot.isVacation ? 'employee-badge-vacation' : slot.requiresSupervision ? 'employee-badge-aufsicht' : 'employee-badge-kasse',
+                                    hasWarning && 'ring-1 ring-warning'
+                                  )}
+                                >
+                                  <span className="truncate">{employee.firstName} {employee.lastName.charAt(0)}.</span>
+                                  {canEditAssignment(assignment.shiftSlotId) && (
+                                    <button onClick={() => removeAssignment(assignment.id)} className="ml-1 opacity-0 transition-opacity group-hover:opacity-100">
                                       <X className="h-3 w-3" />
                                     </button>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </td>
-                        );
-                      })
-                    )}
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </td>
+                      );
+                    })}
                   </tr>
                 );
               })}
@@ -432,21 +538,10 @@ export default function Planning() {
         </div>
       </div>
 
-      <div
-        className={cn(
-          'flex h-full min-h-0 flex-shrink-0 flex-col border-l border-border bg-card transition-all duration-200',
-          rightPanelCollapsed ? 'w-14' : 'w-64'
-        )}
-      >
+      <div className={cn('flex h-full min-h-0 flex-shrink-0 flex-col border-l border-border bg-card transition-all duration-200', rightPanelCollapsed ? 'w-14' : 'w-52 xl:w-56')}>
         {rightPanelCollapsed ? (
           <div className="flex h-full flex-col items-center gap-3 p-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9"
-              onClick={() => setRightPanelCollapsed(false)}
-              title="Infoleiste ausklappen"
-            >
+            <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => setRightPanelCollapsed(false)} title="Infoleiste ausklappen">
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <div className="mt-2 flex flex-col items-center gap-2 text-muted-foreground">
@@ -461,68 +556,88 @@ export default function Planning() {
                 <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
                   <MapPin className="h-3.5 w-3.5" /> Ansicht
                 </h3>
-                <div className="flex items-center gap-1">
-                  {visibleLocationIds.size < locations.length && (
-                    <button onClick={showAllLocations} className="text-[10px] text-primary hover:underline">
-                      Alle zeigen
-                    </button>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => setRightPanelCollapsed(true)}
-                    title="Infoleiste einklappen"
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setRightPanelCollapsed(true)} title="Infoleiste einklappen">
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
               </div>
-              <div className="space-y-1">
-                {locations.map(loc => {
-                  const isVisible = visibleLocationIds.has(loc.id);
-                  const isOnlyOne = visibleLocationIds.size === 1 && isVisible;
+              <p className="mb-2 text-[11px] text-muted-foreground">Es wird immer nur ein Standort gleichzeitig angezeigt.</p>
+              <div className="space-y-1.5">
+                {locations.map(location => {
+                  const isActive = location.id === selectedLocation.id;
                   return (
-                    <div key={loc.id} className={`flex items-center justify-between rounded-md border px-2 py-1.5 transition-all ${isVisible ? 'border-border bg-card' : 'border-border/50 bg-muted/30 opacity-60'}`}>
-                      <button
-                        onClick={() => toggleLocation(loc.id)}
-                        className="flex flex-1 items-center gap-1.5 text-left text-xs font-medium text-foreground"
-                      >
-                        {isVisible ? <Eye className="h-3 w-3 text-primary" /> : <EyeOff className="h-3 w-3 text-muted-foreground" />}
-                        <span className="truncate">{loc.name}</span>
-                      </button>
-                      {!isOnlyOne && isVisible && locations.length > 1 && (
-                        <button
-                          onClick={() => showOnlyLocation(loc.id)}
-                          className="ml-1 whitespace-nowrap text-[10px] text-muted-foreground hover:text-primary"
-                          title="Nur diesen Standort anzeigen"
-                        >
-                          Nur
-                        </button>
+                    <button
+                      key={location.id}
+                      onClick={() => setSelectedLocationId(location.id)}
+                      className={cn(
+                        'flex w-full items-center justify-between rounded-md border px-2 py-2 text-left transition-all',
+                        isActive ? 'border-primary/40 bg-primary/10 text-foreground' : 'border-border bg-card text-muted-foreground hover:border-primary/20 hover:text-foreground'
                       )}
-                    </div>
+                    >
+                      <span className="truncate text-xs font-medium">{location.name}</span>
+                      {isActive && <Check className="h-3.5 w-3.5 text-primary" />}
+                    </button>
                   );
                 })}
               </div>
             </div>
 
             <h3 className="mb-3 text-sm font-semibold text-foreground">Info</h3>
-            {selEmp ? (
+            <div className="mb-5 rounded-lg border border-border p-3">
+              <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
+                <ShieldCheck className="h-4 w-4 text-primary" /> Zugriff
+              </div>
+              <div className="text-xs text-muted-foreground">
+                <div className="font-medium text-foreground">{currentUser?.displayName || 'Unbekannt'}</div>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {currentUser?.isAdmin ? (
+                    <Badge variant="default">Admin</Badge>
+                  ) : (
+                    <>
+                      {currentUser?.permissions.canManageKasse && <Badge variant="outline">Kasse</Badge>}
+                      {currentUser?.permissions.canManageSupervision && <Badge variant="outline">Badeaufsicht</Badge>}
+                      <Badge variant="secondary">Urlaub</Badge>
+                    </>
+                  )}
+                </div>
+                {!currentUser?.isAdmin && (
+                  <p className="mt-2 text-[11px]">Nicht erlaubte Schichten bleiben sichtbar, sind aber nicht bearbeitbar.</p>
+                )}
+              </div>
+            </div>
+
+            {selectedEmployeeData ? (
               <div className="animate-fade-in space-y-3">
                 <div className="rounded-lg border border-border p-3">
-                  <div className="text-sm font-medium text-foreground">{selEmp.firstName} {selEmp.lastName}</div>
-                  <div className="mt-1 text-xs text-muted-foreground">{selEmp.employmentType}</div>
-                  <Badge variant="outline" className={`mt-2 text-[10px] ${selEmp.canSupervise ? 'border-[hsl(var(--badge-aufsicht)/0.4)] text-[hsl(var(--badge-aufsicht))]' : 'border-[hsl(var(--badge-kasse)/0.4)] text-[hsl(var(--badge-kasse))]'}`}>
-                    {selEmp.canSupervise ? 'Badeaufsicht ✓' : 'Nur Kasse'}
+                  <div className="text-sm font-medium text-foreground">
+                    {selectedEmployeeData.firstName} {selectedEmployeeData.lastName}
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">{selectedEmployeeData.employmentType}</div>
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      'mt-2 text-[10px]',
+                      selectedEmployeeData.canSupervise
+                        ? 'border-[hsl(var(--badge-aufsicht)/0.4)] text-[hsl(var(--badge-aufsicht))]'
+                        : 'border-[hsl(var(--badge-kasse)/0.4)] text-[hsl(var(--badge-kasse))]'
+                    )}
+                  >
+                    {selectedEmployeeData.canSupervise ? 'Badeaufsicht ✓' : 'Nur Kasse'}
                   </Badge>
                 </div>
                 <div className="space-y-1">
-                  <div className="flex justify-between text-xs"><span className="text-muted-foreground">Sollstunden</span><span className="font-medium text-foreground">{selEmp.monthlyTargetHours}h</span></div>
-                  <div className="flex justify-between text-xs"><span className="text-muted-foreground">Geplant</span><span className="font-medium text-foreground">{selEmpHours}h</span></div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">Sollstunden</span>
+                    <span className="font-medium text-foreground">{selectedEmployeeData.monthlyTargetHours}h</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">Geplant</span>
+                    <span className="font-medium text-foreground">{selectedEmployeeHours}h</span>
+                  </div>
                   <div className="flex justify-between text-xs">
                     <span className="text-muted-foreground">Differenz</span>
-                    <span className={`font-medium ${selEmpHours - selEmp.monthlyTargetHours > 0 ? 'text-warning' : 'text-success'}`}>
-                      {selEmpHours - selEmp.monthlyTargetHours > 0 ? '+' : ''}{selEmpHours - selEmp.monthlyTargetHours}h
+                    <span className={cn('font-medium', selectedEmployeeHours - selectedEmployeeData.monthlyTargetHours > 0 ? 'text-warning' : 'text-success')}>
+                      {selectedEmployeeHours - selectedEmployeeData.monthlyTargetHours > 0 ? '+' : ''}
+                      {selectedEmployeeHours - selectedEmployeeData.monthlyTargetHours}h
                     </span>
                   </div>
                 </div>
@@ -541,7 +656,10 @@ export default function Planning() {
               </div>
             </div>
 
-            <div className="mt-6">
+            <div className="mt-6 space-y-2">
+              {!canExportCombined && (
+                <p className="text-[11px] text-muted-foreground">Die kombinierte Ansicht für mehrere Standorte ist nur für den Admin verfügbar.</p>
+              )}
               <Button onClick={() => setExportOpen(true)} variant="outline" className="w-full gap-2">
                 <FileDown className="h-4 w-4" />
                 Exportieren
@@ -551,7 +669,12 @@ export default function Planning() {
         )}
       </div>
 
-      <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} currentDate={currentDate} />
+      <ExportDialog
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        currentDate={currentDate}
+        currentLocationId={selectedLocation.id}
+      />
     </div>
   );
 }

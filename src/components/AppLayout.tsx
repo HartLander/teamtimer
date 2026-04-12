@@ -1,16 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { NavLink } from '@/components/NavLink';
 import { useApp } from '@/contexts/AppContext';
-import { Calendar, Users, BarChart3, Settings, LogOut, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Calendar, Users, BarChart3, Settings, LogOut, Clock, ChevronLeft, ChevronRight, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-
-const navItems = [
-  { to: '/', icon: Calendar, label: 'Planung' },
-  { to: '/mitarbeiter', icon: Users, label: 'Mitarbeiter' },
-  { to: '/auswertung', icon: BarChart3, label: 'Auswertung' },
-  { to: '/einstellungen', icon: Settings, label: 'Einstellungen' },
-];
 
 const STORAGE_KEY = 'teamtimer-app-sidebar-collapsed';
 
@@ -22,12 +15,27 @@ function getInitialCollapsedState() {
 }
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-  const { logout } = useApp();
+  const { logout, currentUser } = useApp();
   const [collapsed, setCollapsed] = useState(getInitialCollapsedState);
 
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEY, String(collapsed));
   }, [collapsed]);
+
+  const navItems = useMemo(() => {
+    const base = [
+      { to: '/', icon: Calendar, label: 'Planung' },
+      { to: '/mitarbeiter', icon: Users, label: 'Mitarbeiter' },
+      { to: '/auswertung', icon: BarChart3, label: 'Auswertung' },
+      { to: '/einstellungen', icon: Settings, label: 'Einstellungen' },
+    ];
+
+    if (currentUser?.isAdmin) {
+      base.push({ to: '/konten', icon: ShieldCheck, label: 'Konten' });
+    }
+
+    return base;
+  }, [currentUser?.isAdmin]);
 
   return (
     <div className="flex h-[100dvh] w-full overflow-hidden bg-background">
@@ -81,6 +89,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </nav>
 
         <div className="border-t border-border p-3">
+          {!collapsed && currentUser && (
+            <div className="mb-3 rounded-lg border border-border bg-background/40 px-3 py-2 text-xs">
+              <div className="font-medium text-foreground">{currentUser.displayName}</div>
+              <div className="text-muted-foreground">{currentUser.isAdmin ? 'Admin' : currentUser.username}</div>
+            </div>
+          )}
           <Button
             variant="ghost"
             onClick={logout}

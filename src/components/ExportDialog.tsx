@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay } from 'date-fns';
 import { de } from 'date-fns/locale';
@@ -13,17 +13,34 @@ interface ExportDialogProps {
   open: boolean;
   onClose: () => void;
   currentDate: Date;
+  currentLocationId?: string;
 }
 
 const WEEKDAYS = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
 
-export default function ExportDialog({ open, onClose, currentDate }: ExportDialogProps) {
-  const { locations, allSlots, getEmployee, getAssignmentsForDate } = useApp();
+export default function ExportDialog({ open, onClose, currentDate, currentLocationId }: ExportDialogProps) {
+  const { locations, allSlots, getEmployee, getAssignmentsForDate, canExportCombined } = useApp();
 
   const [showKasse, setShowKasse] = useState(true);
   const [showAufsicht, setShowAufsicht] = useState(true);
   const [showUrlaub, setShowUrlaub] = useState(true);
-  const [selectedLocationIds, setSelectedLocationIds] = useState<Set<string>>(new Set(locations.map(l => l.id)));
+  const [selectedLocationIds, setSelectedLocationIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!open) return;
+
+    if (!canExportCombined && currentLocationId) {
+      setSelectedLocationIds(new Set([currentLocationId]));
+      return;
+    }
+
+    if (currentLocationId && locations.some(location => location.id === currentLocationId)) {
+      setSelectedLocationIds(new Set([currentLocationId]));
+      return;
+    }
+
+    setSelectedLocationIds(new Set(locations.map(location => location.id)));
+  }, [open, currentLocationId, locations, canExportCombined]);
 
   const selectedLocations = useMemo(
     () => locations.filter(location => selectedLocationIds.has(location.id)),
@@ -31,10 +48,16 @@ export default function ExportDialog({ open, onClose, currentDate }: ExportDialo
   );
 
   const toggleLocation = (id: string) => {
+    if (!canExportCombined) return;
+
     setSelectedLocationIds(prev => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(id)) {
+        if (next.size === 1) return prev;
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
       return next;
     });
   };
@@ -83,7 +106,6 @@ export default function ExportDialog({ open, onClose, currentDate }: ExportDialo
       doc.setFontSize(12);
       doc.text(location.name, margin.left, margin.top + 11);
 
-      // Header
       const headerFill = 232;
       const altRowFill = 247;
       const normalRowFill = 255;
@@ -106,7 +128,6 @@ export default function ExportDialog({ open, onClose, currentDate }: ExportDialo
         doc.text(slot.label, x + 2, tableY + 6.8);
       });
 
-      // Body rows
       days.forEach((day, rowIndex) => {
         const dateStr = format(day, 'yyyy-MM-dd');
         const dayOfWeek = getDay(day);
@@ -149,13 +170,17 @@ export default function ExportDialog({ open, onClose, currentDate }: ExportDialo
     });
 
     doc.save(`Dienstplan_${format(currentDate, 'yyyy-MM')}.pdf`);
-    toast.success('PDF wurde schwarz-weiß und besser lesbar exportiert.');
+    toast.success('PDF wurde exportiert.');
     onClose();
   };
 
+  const visibleLocations = canExportCombined
+    ? locations
+    : locations.filter(location => location.id === currentLocationId);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="mx-4 w-full max-w-md rounded-xl border border-border bg-card shadow-xl animate-fade-in">
+      <div className="mx-4 w-full max-w-md animate-fade-in rounded-xl border border-border bg-card shadow-xl">
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <h2 className="text-base font-semibold text-foreground">Dienstplan exportieren</h2>
           <button onClick={onClose} className="text-muted-foreground transition-colors hover:text-foreground">
@@ -185,19 +210,22 @@ export default function ExportDialog({ open, onClose, currentDate }: ExportDialo
           <div>
             <h3 className="mb-2 text-sm font-semibold text-foreground">Standorte</h3>
             <div className="space-y-2">
-              {locations.map(loc => (
-                <div key={loc.id} className="flex items-center gap-2">
+              {visibleLocations.map(location => (
+                <div key={location.id} className="flex items-center gap-2">
                   <Checkbox
-                    id={`exp-loc-${loc.id}`}
-                    checked={selectedLocationIds.has(loc.id)}
-                    onCheckedChange={() => toggleLocation(loc.id)}
+                    id={`exp-loc-${location.id}`}
+                    checked={selectedLocationIds.has(location.id)}
+                    disabled={!canExportCombined}
+                    onCheckedChange={() => toggleLocation(location.id)}
                   />
-                  <Label htmlFor={`exp-loc-${loc.id}`} className="text-sm">{loc.name}</Label>
+                  <Label htmlFor={`exp-loc-${location.id}`} className="text-sm">{location.name}</Label>
                 </div>
               ))}
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              Jeder ausgewählte Standort wird auf genau einer eigenen Hochformat-Seite exportiert.
+              {canExportCombined
+                ? 'Standardmäßig ist der aktuell geöffnete Standort ausgewählt.'
+                : 'Ohne Admin-Rechte ist nur der aktuell geöffnete Standort exportierbar.'}
             </p>
           </div>
         </div>

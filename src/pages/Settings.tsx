@@ -55,7 +55,13 @@ export default function SettingsPage() {
   };
 
   const toggleSeasonMonth = (m: number) => {
-    setSeasonMonths(seasonMonths.includes(m) ? seasonMonths.filter(x => x !== m) : [...seasonMonths, m].sort());
+    if (seasonMonths.includes(m)) {
+      if (seasonMonths.length === 1) return;
+      setSeasonMonths(seasonMonths.filter(x => x !== m));
+      return;
+    }
+
+    setSeasonMonths([...seasonMonths, m].sort((a, b) => a - b));
   };
 
   return (

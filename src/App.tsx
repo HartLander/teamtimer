@@ -9,10 +9,11 @@ import Planning from '@/pages/Planning';
 import Employees from '@/pages/Employees';
 import Evaluation from '@/pages/Evaluation';
 import SettingsPage from '@/pages/Settings';
+import AccountsPage from '@/pages/Accounts';
 import NotFound from '@/pages/NotFound';
 
 function AppRoutes() {
-  const { isInitializing, isLoggedIn } = useApp();
+  const { isInitializing, isLoggedIn, currentUser } = useApp();
 
   if (isInitializing) {
     return (
@@ -31,6 +32,7 @@ function AppRoutes() {
         <Route path="/mitarbeiter" element={<Employees />} />
         <Route path="/auswertung" element={<Evaluation />} />
         <Route path="/einstellungen" element={<SettingsPage />} />
+        <Route path="/konten" element={currentUser?.isAdmin ? <AccountsPage /> : <NotFound />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </AppLayout>
